@@ -10,6 +10,29 @@ async function enrich(hex,callsign){try{let u=`https://api.adsbdb.com/v0/aircraf
 function airport(a){if(!a)return null; return a.iata_code||a.icao_code||a.municipality||null}
 async function details(a,marker){let cs=clean(a.flight); marker.bindPopup('<b>Daten werden geladen…</b>').openPopup(); const e=await enrich(a.hex,cs); const ac=e.aircraft||{},fr=e.flightroute||{}; const from=airport(fr.origin),to=airport(fr.destination); const route=from&&to?`${from} → ${to}`:'Route nicht verfügbar'; const alt=n(a.alt_geom??a.alt_baro), speed=n(a.gs); marker.setPopupContent(`<div class="flight">${fr.callsign_iata||cs||ac.registration||'Unbekannter Flug'}</div><div class="route">${route}</div><div class="muted">${fr.airline?.name||ac.registered_owner||''}</div><div class="grid"><span>Typ</span><b>${ac.type||ac.icao_type||a.t||'–'}</b><span>Registration</span><b>${ac.registration||a.r||'–'}</b><span>Höhe</span><b>${alt!==null?(typeof alt==='number'?feetToM(alt).toLocaleString('de-CH')+' m':'–'):'–'}</b><span>Tempo</span><b>${speed!==null?knotsToKmh(speed)+' km/h':'–'}</b></div>`)}
 async function load(){if(!user)return; status.textContent='Flugzeuge werden geladen…'; try{const [lat,lon]=user; const r=await fetch(`https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/50`); if(!r.ok)throw Error(r.status); const d=await r.json(); const list=d.ac||d.aircraft||[]; planes.clearLayers(); let shown=0; for(const a of list){if(n(a.lat)===null||n(a.lon)===null)continue; const m=L.marker([a.lat,a.lon],{icon:icon(a.track)}).addTo(planes); m.on('click',()=>details(a,m)); shown++;} status.textContent=`${shown} Flugzeuge · 50 NM`; }catch(e){status.textContent='Live-Daten momentan nicht erreichbar'; console.error(e)}}
-function locate(){status.textContent='Standort wird gesucht…'; navigator.geolocation.getCurrentPosition(p=>{user=[p.coords.latitude,p.coords.longitude]; if(userMarker)map.removeLayer(userMarker); userMarker=L.circleMarker(user,{radius:7,weight:3,fillOpacity:1}).addTo(map).bindTooltip('Du bist hier'); map.setView(user,9); load(); clearInterval(timer); timer=setInterval(load,15000)},e=>{status.textContent='Standortfreigabe erforderlich';alert('Bitte Standortzugriff erlauben. Auf dem iPhone funktioniert Geolocation nur über HTTPS.')},{enableHighAccuracy:true,timeout:12000,maximumAge:30000})}
+function locate(){
+  status.textContent='Standort wird gesucht…';
+  if(!window.isSecureContext){
+    status.textContent='Keine sichere HTTPS-Verbindung';
+    alert('Sky wurde nicht über eine sichere HTTPS-Verbindung geöffnet. Bitte die GitHub-Pages-Adresse direkt in Safari öffnen.');
+    return;
+  }
+  if(!('geolocation' in navigator)){
+    status.textContent='Geolocation nicht verfügbar';
+    alert('Safari stellt Sky derzeit keinen Standortdienst zur Verfügung.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(p=>{
+    user=[p.coords.latitude,p.coords.longitude];
+    if(userMarker)map.removeLayer(userMarker);
+    userMarker=L.circleMarker(user,{radius:7,weight:3,fillOpacity:1}).addTo(map).bindTooltip('Du bist hier');
+    map.setView(user,9); load(); clearInterval(timer); timer=setInterval(load,15000)
+  },e=>{
+    const msg = e.code===1 ? 'Standortzugriff wurde von iOS/Safari verweigert.' : e.code===2 ? 'iPhone konnte den Standort momentan nicht bestimmen.' : e.code===3 ? 'Standortbestimmung hat zu lange gedauert.' : 'Unbekannter Standortfehler.';
+    status.textContent=msg;
+    alert(msg+'\n\nFehlercode: '+e.code+(e.message?'\n'+e.message:''));
+    console.error('Geolocation error',e);
+  },{enableHighAccuracy:false,timeout:30000,maximumAge:60000})
+}
 document.getElementById('locate').onclick=locate; document.getElementById('refresh').onclick=load; locate();
 </script></body></html>
